@@ -1,8 +1,18 @@
+#include <Boards.h>
+#include <Firmata.h>
+#include <FirmataConstants.h>
+#include <FirmataDefines.h>
+#include <FirmataMarshaller.h>
+#include <FirmataParser.h>
+
 #include <Adafruit_NeoPixel.h>
+#include "Shape.h"
 #include "Pixel_Grid.h"
 #include "LCD_Panel.h"
+#include "Button.h"
+
 #ifdef __AVR__
-  #include <avr/power.h>
+#include <avr/power.h>
 #endif
 
 #define PIN 2
@@ -10,6 +20,19 @@
 #define PIXEL_BUFFER_SIZE 258
 #define NUM_ROWS 20
 #define NUM_COLUMNS 10
+
+// Example 4 - Receive a number as text and convert it to an int
+
+const byte numChars = 32;
+char receivedChars[numChars];   // an array to store the received data
+
+boolean newData = false;
+
+uint32_t dataNumber = 0;             // new for this version
+
+byte receivedBytes[600];
+uint16_t byteCount = 0;
+uint16_t colourCount = 0;
 
 // Parameter 1 = number of pixels in strip
 // Parameter 2 = Arduino pin number (most are valid)
@@ -35,6 +58,7 @@ uint16_t brightnessStep = 10;
 
 bool pulse = true;
 
+uint16_t mode = 0;
 uint32_t colours[9];
 uint32_t randomColours[PIXEL_BUFFER_SIZE];
 const int ledPin = 2;
@@ -52,191 +76,287 @@ unsigned long timePassed2;
 unsigned long timePassed3;
 unsigned long timePassed4;
 
-class Shape {
-  private:
-    String mName;
-    uint32_t mColour;
-  public :  
-    Shape(String pName, uint32_t pColour) {
-      this->mName = pName;
-      this->mColour = pColour;
-    }
 
-  String getName() {
-    return this->mName;
-  }
-
-  uint32_t getColour() {
-    return this->mColour;
-  }
- static Shape* makeI(){
-    return new Shape("I", strip.Color(0, 230, 254)); // light blue
-  }
-  static Shape* makeJ(){
-    return new Shape("J", strip.Color(24, 1, 255)); // dark blue
-  }
-  static Shape* makeL(){
-    return new Shape("L", strip.Color(255,115,8)); // orange
-  }
-  static Shape* makeO(){
-    return new Shape("O", strip.Color(255, 222, 0)); // yellow
-  }
-  static Shape* makeS(){
-    return new Shape("S", strip.Color(102,253,0)); // green
-  }
-  static Shape* makeT(){
-    return new Shape("T", strip.Color(184,2,253)); // purple
-  }
-  static Shape* makeZ(){
-    return new Shape("Z", strip.Color(254,16,20)); // red
-  }
-  
-};
 
 class BagOfSeven {
   private:
-  static const uint16_t cSize = 7;
-  Shape* mBag[cSize];
-  uint16_t mRemainingShapes;
-    
+    static const uint16_t cSize = 7;
+    Shape* mBag[cSize];
+    uint16_t mRemainingShapes;
+
   public:
-  BagOfSeven(){
-    refreshBag();
-  }
-  void refreshBag() {
-    mBag[0] = Shape::makeI();
-    mBag[1] = Shape::makeJ();
-    mBag[2] = Shape::makeL();
-    mBag[3] = Shape::makeO();
-    mBag[4] = Shape::makeS();
-    mBag[5] = Shape::makeT();
-    mBag[6] = Shape::makeZ();   
-    mRemainingShapes = cSize; 
-  }
-  Shape * getNextShape() {
-    uint16_t shapeIndex = random(0, mRemainingShapes);
-    Shape* shape = mBag[shapeIndex];
-    mRemainingShapes--;
-    for(uint16_t i = shapeIndex; i < mRemainingShapes; i++) {
-      mBag[i] = mBag[i+1];
-    }
-    if (mRemainingShapes <= 0) {
+    BagOfSeven() {
       refreshBag();
     }
-    return shape;
-  }
+    void refreshBag() {
+      uint32_t white = strip.Color(255, 255, 255);
+      uint32_t light_blue = strip.Color(0, 230, 254);
+      uint32_t dark_blue = strip.Color(24, 1, 255);
+      uint32_t orange = strip.Color(255, 115, 8);
+      uint32_t yellow = strip.Color(255, 222, 0);
+      uint32_t green = strip.Color(102, 253, 0);
+      uint32_t red = strip.Color(254, 16, 20);
+      uint32_t purple = strip.Color(184, 2, 253);
+      mBag[0] = Shape::makeI(light_blue);
+      mBag[1] = Shape::makeJ(dark_blue);
+      mBag[2] = Shape::makeL(orange);
+      mBag[3] = Shape::makeO(yellow);
+      mBag[4] = Shape::makeS(green);
+      mBag[5] = Shape::makeT(purple);
+      mBag[6] = Shape::makeZ(red);
+      mRemainingShapes = cSize;
+    }
+    Shape * getNextShape() {
+      uint16_t shapeIndex = random(0, mRemainingShapes);
+      Shape* shape = mBag[shapeIndex];
+      mRemainingShapes--;
+      for (uint16_t i = shapeIndex; i < mRemainingShapes; i++) {
+        mBag[i] = mBag[i + 1];
+      }
+      if (mRemainingShapes <= 0) {
+        refreshBag();
+      }
+      return shape;
+    }
 
 };
 
 
- 
 
 
 
+const uint16_t buttonPin1 = 3;     // the number of the pushbutton pin
+const uint16_t buttonPin2 = 4;     // the number of the pushbutton pin
+const uint16_t buttonPin3 = 5;     // the number of the pushbutton pin
 
 Shape * _currentShape;
 LCD_Panel * lcdPanel;
 Pixel_Grid * pixelGrid;
+Button * leftButton;
+Button * rightButton;
+Button * fireButton;
 uint32_t currentDigit;
+Shape* oShape;
 
 void setup() {
   // This is for Trinket 5V 16MHz, you can remove these three lines if you are not using a Trinket
-  #if defined (__AVR_ATtiny85__)
-    if (F_CPU == 16000000) clock_prescale_set(clock_div_1);
-  #endif
+#if defined (__AVR_ATtiny85__)
+  if (F_CPU == 16000000) clock_prescale_set(clock_div_1);
+#endif
+
+
   // End of trinket special code
- pinMode(PIN, OUTPUT);
-  
+  pinMode(PIN, OUTPUT);
+  pinMode(buttonPin1, INPUT);
+  pinMode(buttonPin2, INPUT);
+  pinMode(buttonPin3, INPUT);
 
-count = 0;
+  leftButton = new Button(buttonPin1);
+  rightButton = new Button(buttonPin2);
+  fireButton = new Button(buttonPin3);
 
+  count = 0;
+  oShape = Shape::makeO(strip.Color(255, 222, 0)); //yellow
+  oShape->setPosition(5, 5);
 
-Serial.begin(9600);
+  Serial.begin(115200);
   strip.begin();
   strip.show(); // Initialize all pixels to 'off'
   initialiseColours();
-  lcdPanel = new LCD_Panel(&strip, 216, 6, strip.Color(255,0,0));
+  lcdPanel = new LCD_Panel(&strip, 214, 6, strip.Color(255, 0, 0));
   pixelGrid = new Pixel_Grid(&strip, 0, 20, 10);
-  currentDigit = 999990;
+  currentDigit = 0;
   lcdPanel->changeNumber(currentDigit);
-  initialiseRandomColours(pixelGrid);
-  pixelGrid->render();
+  //  initialiseRandomColours(pixelGrid);
+  //  pixelGrid->render();
   lcdPanel->render();
+  pixelGrid->setGridColour(strip.Color(0, 0, 0));
+  pixelGrid->render();
   strip.show();
   return;
   colour = getRandomColour();
 
-//initialisePixelGridConversionTable();
+  //initialisePixelGridConversionTable();
 
   previousTime = micros();
   timePassed = 0;
   BagOfSeven* bag = new BagOfSeven();
   Serial.println("setup complete");
-  for(uint16_t i = 0; i < 15; i++) {
+  for (uint16_t i = 0; i < 15; i++) {
     _currentShape = bag->getNextShape();
     //Serial.println(_currentShape->getName());
     delete _currentShape;
   }
 
-  
-  
+
+
 }
 
 void loop() {
   // Some example procedures showing how to display to the pixels:
   unsigned long currentTime = micros();
   unsigned long deltaTime = currentTime - previousTime;
-  
- // Serial.println("loop");
- // Serial.println(deltaTime);
- // tailAnimation(deltaTime);
- //
- // return;
- 
-  if(pulse)
-  {
-    //pulseAnimation(deltaTime);
-   tailAnimation(deltaTime);
+
+  recvWithEndMarker();
+  //   showNewNumber();
+
+  // Serial.println("loop");
+  // Serial.println(deltaTime);
+  // tailAnimation(deltaTime);
+  //
+  // return;
+  leftButton->update();
+  rightButton->update();
+  fireButton->update();
+  //Serial.println(digitalRead(buttonPin1));
+  /*
+    if(leftButton->released()) {
+    pixelGrid->setGridColour(strip.Color(255,0,0));
+    }
+    if(rightButton->released()) {
+    pixelGrid->setGridColour(strip.Color(0,255,0));
+    }
+    if(fireButton->released()) {
+    pixelGrid->setGridColour(strip.Color(0,0,255));
+    }
+  */
+  //pixelGrid->addShape(oShape);
+  /*
+    // Serial.println(rightButton->isDown());
+    if(pulse)
+    {
+      //pulseAnimation(deltaTime);
+     tailAnimation(deltaTime);
+    }
+    else
+    {
+
+      proximityAnimation(deltaTime);
+    }
+  */
+  // countdownAnimation(deltaTime);
+  // colour = getRandomColour();
+  // pixelGrid->setGridColour(colour);
+  // pixelGrid->render();
+  //lcdPanel->render();
+  // strip.show();
+
+  previousTime = currentTime;
+}
+
+
+
+
+void recvWithEndMarker() {
+  static byte index = 0;
+  char endMarker = '\n';
+  char receivedCharacter;
+  char scoreMarker = 's';
+  char gridMarker = 'g';
+  char semiColon = ';';
+  char comma = ',';
+
+  if (Serial.available() > 0) {
+
+    if (mode == 0) {
+      receivedCharacter = Serial.read();
+      if (receivedCharacter == scoreMarker) {
+        mode = 1; // reading score
+        Serial.println("s found");
+      }
+      else if (receivedCharacter == gridMarker) {
+        mode = 2; // reading grid
+        //   Serial.println("g found");
+      }
+      else {
+        mode = 0;
+      }
+    }
+    else if (mode == 1) {
+      uint32_t receivedInt = Serial.parseInt();
+      mode = 0;
+      Serial.println("mode1");
+      lcdPanel->changeNumber(receivedInt);
+      lcdPanel->render();
+      strip.show();
+    }
+    else if (mode == 2) {
+      //   byte receivedRed = Serial.read();
+      //   byte receivedGreen = Serial.read();
+      //  byte receivedBlue = Serial.read();
+      //    Serial.println("mode2");
+      //    Serial.print("byteCount: ");
+      //    Serial.println(byteCount);
+
+      //   Serial.print("colour(");
+      //   Serial.print(receivedRed);
+      //   Serial.print(", ");
+      //   Serial.print(receivedGreen);
+      //   Serial.print(", ");
+      //   Serial.print(receivedBlue);
+      //   Serial.println(")");
+      //  receivedBytes[0] = receivedRed;
+      //  receivedBytes[1] = receivedGreen;
+      //  receivedBytes[2] = receivedBlue;
+      Serial.readBytes(receivedBytes, 600);
+      for(uint16_t i = 0; i < 600; i+=3) {
+        uint32_t colourTest = strip.Color(receivedBytes[i], receivedBytes[i+1], receivedBytes[i+2]);
+        pixelGrid->setGridCellColour(colourCount, colourTest);        
+        colourCount++;
+      }
+      //   Serial.println("got three bytes");
+      pixelGrid->render();
+      strip.show();
+        colourCount = 0;
+        mode = 0;
+      
+
+
+    }
+
   }
-  else
-  {
-  
-    proximityAnimation(deltaTime);
+}
+
+void showNewNumber() {
+  if (newData == true) {
+    dataNumber = 0;             // new for this version
+    String string(receivedChars);
+
+    dataNumber = string.toInt();   // new for this version
+
+    Serial.print("This just in ... ");
+    Serial.println(receivedChars);
+    Serial.print("Data as Number ... ");    // new for this version
+    Serial.println(dataNumber);     // new for this version
+    newData = false;
   }
-  
-  countdownAnimation(deltaTime);
-  pixelGrid->render();
-  lcdPanel->render();
-  strip.show();
-  
-previousTime = currentTime;
 }
 void countdownAnimation(unsigned long deltaTime)
 {
   unsigned long oneSecond = 1000000;
-  unsigned long timeBetweenUpdates = oneSecond /4;
-   timePassed = timePassed + deltaTime;
-  
-  if(timePassed > timeBetweenUpdates)
-  {    
+  unsigned long timeBetweenUpdates = oneSecond / 4;
+  timePassed = timePassed + deltaTime;
+
+  if (timePassed > timeBetweenUpdates)
+  {
     timePassed = 0;
-    
-    if(currentDigit < 999999) {
-      currentDigit++;      
+
+    if (currentDigit < 999999) {
+      currentDigit++;
     }
     else {
       currentDigit = 0;
-    }  
-    lcdPanel->changeNumber(currentDigit);  
+    }
+    lcdPanel->changeNumber(currentDigit);
     lcdPanel->render();
     //Serial.println(currentDigit);
   }
 }
 
 void initialiseRandomColours(Pixel_Grid * pPixelGrid) {
-  for(uint16_t row=0; row<NUM_ROWS; row++) {
-    for(uint16_t column=0; column<NUM_COLUMNS; column++) {
-      pPixelGrid->setGridCellColour(row, column, colours[random(2,9)]);
+  for (uint16_t row = 0; row < NUM_ROWS; row++) {
+    for (uint16_t column = 0; column < NUM_COLUMNS; column++) {
+      pPixelGrid->setGridCellColour(row, column, colours[random(2, 9)]);
     }
   }
 }
@@ -244,33 +364,33 @@ void initialiseRandomColours(Pixel_Grid * pPixelGrid) {
 
 
 void initialiseColours() {
-    uint32_t black = strip.Color(0, 0, 0);
-    uint32_t white = strip.Color(255, 255, 255); 
-    uint32_t light_blue = strip.Color(0, 230, 254);
-    uint32_t dark_blue = strip.Color(24, 1, 255);
-    uint32_t orange = strip.Color(255,115,8);
-    uint32_t yellow = strip.Color(255, 222, 0);
-    uint32_t green = strip.Color(102,253,0);
-    uint32_t red = strip.Color(254,16,20);
-    uint32_t purple = strip.Color(184,2,253);
-    colours[0] = black;
-    colours[1] = white;
-    colours[2] = light_blue;
-    colours[3] = dark_blue;
-    colours[4] = orange;
-    colours[5] = yellow;
-    colours[6] = green;
-    colours[7] = red;
-    colours[8] = purple;
+  uint32_t black = strip.Color(0, 0, 0);
+  uint32_t white = strip.Color(255, 255, 255);
+  uint32_t light_blue = strip.Color(0, 230, 254);
+  uint32_t dark_blue = strip.Color(24, 1, 255);
+  uint32_t orange = strip.Color(255, 115, 8);
+  uint32_t yellow = strip.Color(255, 222, 0);
+  uint32_t green = strip.Color(102, 253, 0);
+  uint32_t red = strip.Color(254, 16, 20);
+  uint32_t purple = strip.Color(184, 2, 253);
+  colours[0] = black;
+  colours[1] = white;
+  colours[2] = light_blue;
+  colours[3] = dark_blue;
+  colours[4] = orange;
+  colours[5] = yellow;
+  colours[6] = green;
+  colours[7] = red;
+  colours[8] = purple;
 }
 void proximityAnimation(unsigned long deltaTime)
 {
   unsigned long oneSecond = 1000000;
   unsigned long timeBetweenUpdates = oneSecond;
-timePassed2 = timePassed2 + deltaTime;
-  
-  if(timePassed2 > timeBetweenUpdates)
-  {    
+  timePassed2 = timePassed2 + deltaTime;
+
+  if (timePassed2 > timeBetweenUpdates)
+  {
     timePassed2 = 0;
     pulse = true;
     Serial.println("switchProximity");
@@ -281,34 +401,34 @@ void pulseAnimation(unsigned long deltaTime)
 {
   unsigned long oneSecond = 1000000;
   unsigned long timeBetweenUpdates = oneSecond / 100;
-timePassed3 = timePassed3 + deltaTime;
-  if(timePassed3 > timeBetweenUpdates)
+  timePassed3 = timePassed3 + deltaTime;
+  if (timePassed3 > timeBetweenUpdates)
   {
     brightness = brightness + (brightnessDirection * brightnessStep);
-    if(brightness >= 255 || brightness <= 0)
+    if (brightness >= 255 || brightness <= 0)
     {
       brightnessDirection = -brightnessDirection;
-      
+
     }
-    if(brightness <= 0)
-      {
-        
-        pulse = false;
-        pixelGrid->clear();
-        initialiseRandomColours(pixelGrid);
-        Serial.println("switchPulse");
-        
-      }
-      else {
-        for(uint16_t row=0; row<NUM_ROWS; row++) {
-          for(uint16_t column=0; column<NUM_COLUMNS; column++) {
-            uint32_t colour = pixelGrid->getGridCellColour(row, column);
-            uint32_t newColour = adjustColourBrightness(colour, brightness);
-            pixelGrid->setGridCellColour(row, column, newColour);
-          }
+    if (brightness <= 0)
+    {
+
+      pulse = false;
+      pixelGrid->clear();
+      initialiseRandomColours(pixelGrid);
+      Serial.println("switchPulse");
+
+    }
+    else {
+      for (uint16_t row = 0; row < NUM_ROWS; row++) {
+        for (uint16_t column = 0; column < NUM_COLUMNS; column++) {
+          uint32_t colour = pixelGrid->getGridCellColour(row, column);
+          uint32_t newColour = adjustColourBrightness(colour, brightness);
+          pixelGrid->setGridCellColour(row, column, newColour);
         }
-    
       }
+
+    }
     timePassed3 = 0;
   }
 }
@@ -316,13 +436,13 @@ timePassed3 = timePassed3 + deltaTime;
 void tailAnimation(unsigned long deltaTime)
 {
   unsigned long oneSecond = 1000000;
-  unsigned long timeBetweenUpdates = oneSecond / 100;
-timePassed4 = timePassed4 + deltaTime;
-  if(timePassed4 > timeBetweenUpdates)
+  unsigned long timeBetweenUpdates = oneSecond / 1000000;
+  timePassed4 = timePassed4 + deltaTime;
+  if (timePassed4 > timeBetweenUpdates)
   {
-    if(currentIndex == 0)
+    if (currentIndex == 0)
     {
-      colour = colours[random(2,9)];
+      colour = colours[random(2, 9)];
       pulse = false;
       pixelGrid->clear();
       initialiseRandomColours(pixelGrid);
@@ -330,7 +450,7 @@ timePassed4 = timePassed4 + deltaTime;
     }
     else {
       pixelGrid->clear();
-      showTail(colour, 50);      
+      showTail(colour, 50);
     }
     currentIndex = currentIndex + 1;
     currentIndex = correctIndex(currentIndex);
@@ -340,43 +460,43 @@ timePassed4 = timePassed4 + deltaTime;
 
 uint32_t getRandomColour()
 {
-  uint8_t r = random(0,255);
-  uint8_t g = random(0,255);
-  uint8_t b = random(0,255);
-  uint32_t newColour = strip.Color(r, g, b);  
+  uint8_t r = random(0, 255);
+  uint8_t g = random(0, 255);
+  uint8_t b = random(0, 255);
+  uint32_t newColour = strip.Color(r, g, b);
   return newColour;
 }
 
 
-uint32_t adjustColourBrightness(uint8_t r, uint8_t g, uint8_t b, uint16_t brightness) 
+uint32_t adjustColourBrightness(uint8_t r, uint8_t g, uint8_t b, uint16_t brightness)
 {
   uint8_t newRed = brightness * r / 255;
   uint8_t newGreen = brightness * g / 255;
   uint8_t newBlue = brightness * b / 255;
-  uint32_t newColour = strip.Color(newRed, newGreen, newBlue);  
+  uint32_t newColour = strip.Color(newRed, newGreen, newBlue);
   return newColour;
 }
 
-uint32_t adjustColourBrightness(uint32_t colour, uint16_t brightness) 
+uint32_t adjustColourBrightness(uint32_t colour, uint16_t brightness)
 {
-  uint8_t r = getPixelColour(colour,0);
-  uint8_t g = getPixelColour(colour,1);
-  uint8_t b = getPixelColour(colour,2);
+  uint8_t r = getPixelColour(colour, 0);
+  uint8_t g = getPixelColour(colour, 1);
+  uint8_t b = getPixelColour(colour, 2);
   uint32_t newColour = adjustColourBrightness(r, g, b, brightness);
   return newColour;
 }
 
 uint8_t getPixelColour(uint32_t mergedColour, uint8_t index)
 {
-  if(index == 0)
+  if (index == 0)
   {
     return getRedComponent(mergedColour);
-  } 
-  else if(index == 1)
+  }
+  else if (index == 1)
   {
     return getGreenComponent(mergedColour);
   }
-  else if(index == 2)
+  else if (index == 2)
   {
     return getBlueComponent(mergedColour);
   }
@@ -404,11 +524,11 @@ uint8_t getBlueComponent(uint32_t mergedColour)
 int16_t correctIndex(int16_t index)
 {
   int16_t numPixels = pixelGrid->numPixels();
-  if(index >= numPixels)
+  if (index >= numPixels)
   {
     index = index - numPixels;
   }
-  else if(index < 0)
+  else if (index < 0)
   {
     index = index + numPixels;
   }
@@ -418,11 +538,11 @@ int16_t correctIndex(int16_t index)
 // Turn all the dots off
 void showTail(uint32_t colour, uint8_t wait) {
   uint16_t brightness = 255;
-  
-  for(uint16_t i=0; i<tailLength; i++) {
+
+  for (uint16_t i = 0; i < tailLength; i++) {
     int16_t ledIndex = currentIndex - i;
-    ledIndex = correctIndex(ledIndex); 
-    brightness = brightness / 2;  
+    ledIndex = correctIndex(ledIndex);
+    brightness = brightness / 2;
     uint32_t newColour = adjustColourBrightness(colour, brightness);
     pixelGrid->setGridCellColour(ledIndex, newColour);
   }
