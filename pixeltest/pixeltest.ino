@@ -273,39 +273,26 @@ void recvWithEndMarker() {
       }
     }
     else if (mode == 1) {
-      uint32_t receivedInt = Serial.parseInt();
+      // reading the score
+      //uint32_t receivedInt = Serial.parseInt();
+      char score[6];
+      Serial.readBytes(score, 6);
+      String scoreString(score);
+      uint32_t receivedInt = scoreString.toInt();
       mode = 0;
-      Serial.println("mode1");
       lcdPanel->changeNumber(receivedInt);
       lcdPanel->render();
       strip.show();
     }
     else if (mode == 2) {
-      //   byte receivedRed = Serial.read();
-      //   byte receivedGreen = Serial.read();
-      //  byte receivedBlue = Serial.read();
-      //    Serial.println("mode2");
-      //    Serial.print("byteCount: ");
-      //    Serial.println(byteCount);
-
-      //   Serial.print("colour(");
-      //   Serial.print(receivedRed);
-      //   Serial.print(", ");
-      //   Serial.print(receivedGreen);
-      //   Serial.print(", ");
-      //   Serial.print(receivedBlue);
-      //   Serial.println(")");
-      //  receivedBytes[0] = receivedRed;
-      //  receivedBytes[1] = receivedGreen;
-      //  receivedBytes[2] = receivedBlue;
+      // reading the grid
       Serial.readBytes(receivedBytes, 600);
       for(uint16_t i = 0; i < 600; i+=3) {
         uint32_t colourTest = strip.Color(receivedBytes[i], receivedBytes[i+1], receivedBytes[i+2]);
         pixelGrid->setGridCellColour(colourCount, colourTest);        
         colourCount++;
       }
-      //   Serial.println("got three bytes");
-      pixelGrid->render();
+       pixelGrid->render();
       strip.show();
         colourCount = 0;
         mode = 0;
