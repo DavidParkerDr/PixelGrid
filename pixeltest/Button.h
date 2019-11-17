@@ -4,6 +4,7 @@ class Button {
   uint16_t mPreviousState;
   bool mReleased;
   bool mPressed;
+  bool mStateChanged;
 
   public:
   Button(uint16_t pPin ){
@@ -11,11 +12,12 @@ class Button {
     mPreviousState = LOW;
     mReleased = false;
     mPressed = false;
+    mStateChanged = false;
   }
 
   bool isDown() {
     uint16_t buttonState = digitalRead(mPin);
-    if(buttonState == LOW) {
+    if(buttonState == HIGH) {
       return true;
     }
     return false;
@@ -33,24 +35,31 @@ class Button {
 bool pressed() {    
     return mPressed;
   }
+  bool stateChanged() {
+    return mStateChanged;
+  }
   void update() {
     uint16_t buttonState = digitalRead(mPin);
-    if(buttonState == LOW) {
-      if(mPreviousState == HIGH) {
+    if(buttonState == HIGH) {
+      if(mPreviousState == LOW) {
         // button released
         mReleased = true;
+        mStateChanged = true;
       }
       else {
         mReleased = false;
+        mStateChanged = false;
       }
     }
     else {
-      if(mPreviousState == LOW) {
+      if(mPreviousState == HIGH) {
         // button pressed
         mPressed = true;
+        mStateChanged = true;
       }
       else {
         mPressed = false;
+        mStateChanged = false;
       }
     }
     mPreviousState = buttonState;

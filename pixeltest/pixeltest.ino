@@ -167,7 +167,15 @@ void setup() {
   lcdPanel = new LCD_Panel(&strip, 214, 6, strip.Color(255, 0, 0));
   pixelGrid = new Pixel_Grid(&strip, 0, 20, 10);
   currentDigit = 0;
-  lcdPanel->changeNumber(currentDigit);
+  //lcdPanel->changeNumber(currentDigit);
+  char score[6];
+  score[0] = ' ';
+  score[1] = ' ';
+  score[2] = ' ';
+  score[3] = ' ';
+  score[4] = ' ';
+  score[0] = ' ';
+  lcdPanel->changeCharArray(score);
   //  initialiseRandomColours(pixelGrid);
   //  pixelGrid->render();
   lcdPanel->render();
@@ -178,6 +186,7 @@ void setup() {
   colour = getRandomColour();
 
   //initialisePixelGridConversionTable();
+
 
   previousTime = micros();
   timePassed = 0;
@@ -209,6 +218,10 @@ void loop() {
   leftButton->update();
   rightButton->update();
   fireButton->update();
+
+  if(leftButton->stateChanged()||rightButton->stateChanged()||fireButton->stateChanged()) {
+    sendButtonState();
+  }
   //Serial.println(digitalRead(buttonPin1));
   /*
     if(leftButton->released()) {
@@ -291,8 +304,9 @@ void recvWithEndMarker() {
         score[i] = receivedBytes[i];
       }
       String scoreString(score);
-      uint32_t receivedInt = scoreString.toInt();
-      lcdPanel->changeNumber(receivedInt);
+     // uint32_t receivedInt = scoreString.toInt();
+      //lcdPanel->changeNumber(receivedInt);
+      lcdPanel->changeCharArray(score);
       lcdPanel->render();
       for (uint16_t i = 6; i < 606; i += 3) {
         uint16_t index = i;
@@ -333,19 +347,52 @@ void recvWithEndMarker() {
   }
 }
 
-void showNewNumber() {
-  if (newData == true) {
-    dataNumber = 0;             // new for this version
-    String string(receivedChars);
-
-    dataNumber = string.toInt();   // new for this version
-
-    Serial.print("This just in ... ");
-    Serial.println(receivedChars);
-    Serial.print("Data as Number ... ");    // new for this version
-    Serial.println(dataNumber);     // new for this version
-    newData = false;
+byte calculateButtonsState() {
+  if(leftButton->isDown()){
+    if(rightButton->isDown()) {
+      if(fireButton->isDown()){
+        return 7; // 111
+      }
+      else {
+        return 6; // 110
+      }
+    }
+    else{
+      if(fireButton->isDown()){
+        return 5; // 101
+      }
+      else {
+        return 4; // 100
+      }
+    }
   }
+  else {
+    if(rightButton->isDown()) {
+      if(fireButton->isDown()){
+        return 3; // 011
+      }
+      else {
+        return 2; // 010
+      }
+    }
+    else{
+      if(fireButton->isDown()){
+        return 1; // 001
+      }
+      else {
+        return 0; // 000
+      }
+    }
+  }
+}
+
+void sendButtonState() {
+  byte buttonState = calculateButtonsState();
+  char id = 'b';
+ // Serial.print(id);
+ // Serial.println(buttonState);
+  Serial.write(id);
+  Serial.write(buttonState);
 }
 void countdownAnimation(unsigned long deltaTime)
 {

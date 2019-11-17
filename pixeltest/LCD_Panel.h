@@ -8,10 +8,12 @@ class LCD_Panel {
   uint16_t mStartIndex;
   Adafruit_NeoPixel* mStrip;
   LCD_Digit* mLCDDigits[6];
+  char * mCharArray;
 
   public:
   LCD_Panel(Adafruit_NeoPixel* pStrip, uint16_t pStartIndex, uint16_t pNumDigits, uint32_t pOnColour){
     mCurrentNumber = 0;
+    mCharArray = new char[pNumDigits];
     mStrip = pStrip;
     mStartIndex = pStartIndex;
     mNumDigits = pNumDigits;
@@ -31,6 +33,18 @@ class LCD_Panel {
   void changeNumber(uint32_t pNumber) {
     mCurrentNumber = pNumber;
     calculateDigits();
+  }
+  void changeCharArray(char* pCharArray) {
+    for (uint16_t i = 0; i < mNumDigits; i++) {
+      mCharArray[i] = pCharArray[i];
+      sendChars();
+    }
+  }
+
+  void sendChars() {
+    for(uint16_t i = 0; i < mNumDigits; i++) {
+      mLCDDigits[i]->changeChar(mCharArray[i]);
+    }
   }
 
   void render() {
