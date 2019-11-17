@@ -30,7 +30,7 @@ boolean newData = false;
 
 uint32_t dataNumber = 0;             // new for this version
 
-byte receivedBytes[600];
+byte receivedBytes[606];
 uint16_t byteCount = 0;
 uint16_t colourCount = 0;
 
@@ -160,6 +160,7 @@ void setup() {
   oShape->setPosition(5, 5);
 
   Serial.begin(115200);
+  Serial.flush();
   strip.begin();
   strip.show(); // Initialize all pixels to 'off'
   initialiseColours();
@@ -258,48 +259,76 @@ void recvWithEndMarker() {
 
   if (Serial.available() > 0) {
 
-    if (mode == 0) {
+    if(mode == 0) {
       receivedCharacter = Serial.read();
-      if (receivedCharacter == scoreMarker) {
-        mode = 1; // reading score
-        Serial.println("s found");
-      }
-      else if (receivedCharacter == gridMarker) {
-        mode = 2; // reading grid
-        //   Serial.println("g found");
-      }
-      else {
-        mode = 0;
+      if(receivedCharacter == scoreMarker) {
+        mode = 1;
       }
     }
-    else if (mode == 1) {
-      // reading the score
-      //uint32_t receivedInt = Serial.parseInt();
+    if(mode == 1) {
+    if (byteCount < 6) {
+      Serial.readBytes(receivedBytes, 6);
+      byteCount = 6;
+   //   Serial.print("first 6 bytes: ");
+    //  Serial.println(byteCount);
+      for (uint16_t i = 0; i < 6; i++) {
+        uint16_t byteTest = receivedBytes[i];
+      //  Serial.print("(");
+       // Serial.print(byteTest);
+       // Serial.println(")");
+      }
+    }
+    else if (byteCount < 606) {
+      Serial.readBytes(receivedBytes + byteCount, 60);
+      byteCount += 60;
+    //  Serial.print("next 30 bytes: ");
+    //  Serial.println(byteCount);
+    }
+    if (byteCount >= 606) {
+      colourCount = 0;
       char score[6];
-      Serial.readBytes(score, 6);
+      for (uint16_t i = 0; i < 6; i++) {
+        score[i] = receivedBytes[i];
+      }
       String scoreString(score);
       uint32_t receivedInt = scoreString.toInt();
-      mode = 0;
       lcdPanel->changeNumber(receivedInt);
       lcdPanel->render();
-      strip.show();
-    }
-    else if (mode == 2) {
-      // reading the grid
-      Serial.readBytes(receivedBytes, 600);
-      for(uint16_t i = 0; i < 600; i+=3) {
-        uint32_t colourTest = strip.Color(receivedBytes[i], receivedBytes[i+1], receivedBytes[i+2]);
-        pixelGrid->setGridCellColour(colourCount, colourTest);        
+      for (uint16_t i = 6; i < 606; i += 3) {
+        uint16_t index = i;
+        uint32_t colourTest = strip.Color(receivedBytes[index], receivedBytes[index + 1], receivedBytes[index + 2]);
+        pixelGrid->setGridCellColour(colourCount, colourTest);
         colourCount++;
       }
-       pixelGrid->render();
+      pixelGrid->render();
       strip.show();
-        colourCount = 0;
-        mode = 0;
-      
-
-
+      byteCount = 0;
+      mode = 0;
     }
+    }
+    // reading the score
+    //uint32_t receivedInt = Serial.parseInt();
+    /*
+      char score[6];
+      Serial.readBytes(score, 6);
+      Serial.readBytes(receivedBytes, 600);
+          String scoreString(score);
+      uint32_t receivedInt = scoreString.toInt();
+      lcdPanel->changeNumber(receivedInt);
+      lcdPanel->render();
+
+      // reading the grid
+      for(uint16_t i = 0; i < 600; i+=3) {
+      uint32_t colourTest = strip.Color(receivedBytes[i], receivedBytes[i+1], receivedBytes[i+2]);
+      pixelGrid->setGridCellColour(colourCount, colourTest);
+      colourCount++;
+      }
+      pixelGrid->render();
+      strip.show();
+
+    */
+
+
 
   }
 }
